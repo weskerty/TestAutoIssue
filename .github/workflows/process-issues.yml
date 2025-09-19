@@ -118,7 +118,7 @@ jobs:
                 },
                 body: JSON.stringify({
                   messages,
-                  model: imageUrl ? 'llama-vision-free' : 'llama-3.3-70b-versatile',
+                  model: imageUrl ? 'meta-llama/llama-4-maverick-17b-128e-instruct' : 'llama-3.3-70b-versatile',
                   temperature: 0.1,
                   max_tokens: 100
                 })
