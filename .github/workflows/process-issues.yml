@@ -139,26 +139,41 @@ jobs:
                 fuentes: []
               };
 
-              // Extraer título
-              const titleMatch = body.match(/📌 Título[^]*?### (.*?)(?:\n|$)/s);
+              // Extraer título - buscar después de "### 📌 Título"
+              const titleMatch = body.match(/### 📌 Título\s*\n\n(.*?)(?=\n### |$)/s);
               if (titleMatch) {
                 sections.title = titleMatch[1].trim();
               }
 
-              // Extraer descripción
-              const descMatch = body.match(/📝 Descripción[^]*?### (.*?)(?=###|$)/s);
+              // Extraer descripción - buscar después de "### 📝 Descripción"
+              const descMatch = body.match(/### 📝 Descripción\s*\n\n(.*?)(?=\n### |$)/s);
               if (descMatch) {
                 sections.description = descMatch[1].trim();
               }
 
-              // Extraer fuentes
-              const fuentesMatch = body.match(/🔗 Fuentes[^]*?### (.*?)(?=###|$)/s);
+              // Extraer fuentes - buscar después de "### 🔗 Fuentes"
+              const fuentesMatch = body.match(/### 🔗 Fuentes\s*\n\n(.*?)(?=\n### |$)/s);
               if (fuentesMatch) {
                 const fuentesText = fuentesMatch[1].trim();
-                sections.fuentes = fuentesText.split('\n')
+                
+                // Buscar todas las URLs en el texto
+                const urlRegex = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/g;
+                const urls = fuentesText.match(urlRegex) || [];
+                
+                // También buscar líneas que empiecen con - o * seguido de URL
+                const lines = fuentesText.split('\n');
+                const lineUrls = lines
                   .map(line => line.trim())
-                  .filter(line => line.startsWith('-') || line.startsWith('*') || line.includes('http'))
-                  .map(line => line.replace(/^[-*]\s*/, '').trim());
+                  .filter(line => line.startsWith('-') || line.startsWith('*'))
+                  .map(line => {
+                    const match = line.match(/https?:\/\/[^\s<>"{}|\\^`\[\]]+/);
+                    return match ? match[0] : null;
+                  })
+                  .filter(url => url !== null);
+                
+                // Combinar todas las URLs encontradas y eliminar duplicados
+                const allUrls = [...new Set([...urls, ...lineUrls])];
+                sections.fuentes = allUrls;
               }
 
               return sections;
@@ -178,9 +193,14 @@ jobs:
 
             sanitizeFilename(filename) {
               return filename
-                .replace(/[^\w\s\-_]/g, '')
-                .replace(/\s+/g, '_')
-                .toLowerCase();
+                .normalize('NFD')                    // Normalizar caracteres Unicode
+                .replace(/[\u0300-\u036f]/g, '')     // Remover acentos
+                .replace(/[^\w\s\-_]/g, '')          // Solo letras, números, espacios, guiones y guiones bajos
+                .replace(/\s+/g, '_')                // Espacios por guiones bajos
+                .replace(/_+/g, '_')                 // Multiple guiones bajos por uno solo
+                .replace(/^_+|_+$/g, '')             // Remover guiones bajos al inicio/final
+                .toLowerCase()                       // Minúsculas
+                .substring(0, 50);                   // Máximo 50 caracteres
             }
 
             async fileExists(filepath) {
@@ -344,14 +364,18 @@ jobs:
                 const images = this.extractImages(this.issueBody);
 
                 console.log('📋 Contenido parseado:', {
-                  title: sections.title,
+                  issueTitle: this.issueTitle,
+                  parsedTitle: sections.title,
                   descriptionLength: sections.description.length,
                   fuentesCount: sections.fuentes.length,
+                  fuentes: sections.fuentes,
                   imagesCount: images.length
                 });
 
                 // Validaciones básicas
-                if (!sections.title || sections.title.length < 3) {
+                const finalTitle = sections.title || this.issueTitle.replace(/^\[Info\]\s*/i, '').trim();
+                
+                if (!finalTitle || finalTitle.length < 3) {
                   throw new Error('El título es muy corto o está vacío');
                 }
 
@@ -373,8 +397,9 @@ jobs:
                 // Crear directorio si no existe
                 await fs.mkdir(CONFIG.targetDir, { recursive: true });
 
-                // Determinar nombre de archivo
-                const sanitizedTitle = this.sanitizeFilename(sections.title);
+                // Determinar nombre de archivo basado en el título del issue, no en el campo título interno
+                const issueTitle = this.issueTitle.replace(/^\[Info\]\s*/i, '').trim();
+                const sanitizedTitle = this.sanitizeFilename(issueTitle);
                 const fileInfo = await this.findAvailableFilename(sanitizedTitle, this.issueUser);
                 const finalFilename = fileInfo.filename;
 
@@ -386,7 +411,7 @@ jobs:
                 console.log('📝 Creando archivo markdown...');
                 await this.createMarkdownFile(
                   finalFilename, 
-                  sections.title, 
+                  finalTitle, 
                   sections.description, 
                   sections.fuentes, 
                   this.issueUser
@@ -399,13 +424,14 @@ jobs:
                 // Commit y push
                 console.log('📤 Realizando commit...');
                 await execAsync('git add .');
-                await execAsync(`git commit -m "Nueva entrada: ${sections.title} (Issue #${this.issueNumber})"`);
+                await execAsync(`git commit -m "Nueva entrada: ${finalTitle} (Issue #${this.issueNumber})"`);
                 await execAsync('git push');
 
                 // Mensaje de éxito
-                let successMessage = `Entrada creada exitosamente: **${sections.title}**\n\n`;
+                let successMessage = `Entrada creada exitosamente: **${finalTitle}**\n\n`;
                 successMessage += `📁 Archivo: \`${finalFilename}.md\`\n`;
                 successMessage += `👤 Usuario: ${this.issueUser}\n`;
+                successMessage += `📊 Fuentes encontradas: ${sections.fuentes.length}\n`;
                 
                 if (fileInfo.canReplace) {
                   successMessage += `🔄 Archivo reemplazado (mismo usuario)\n`;
