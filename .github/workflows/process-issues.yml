@@ -180,15 +180,29 @@ jobs:
             }
 
             extractImages(body) {
-              const imageRegex = /!\[.*?\]\((https?:\/\/[^\)]+)\)/g;
               const images = [];
-              let match;
               
-              while ((match = imageRegex.exec(body)) !== null) {
+              // Buscar imágenes en formato markdown: ![alt](url)
+              const markdownRegex = /!\[.*?\]\((https?:\/\/[^\)]+)\)/g;
+              let match;
+              while ((match = markdownRegex.exec(body)) !== null) {
                 images.push(match[1]);
               }
               
-              return images;
+              // Buscar imágenes en formato HTML: <img src="url">
+              const htmlRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/g;
+              while ((match = htmlRegex.exec(body)) !== null) {
+                images.push(match[1]);
+              }
+              
+              // Buscar URLs de GitHub assets directamente
+              const githubAssetsRegex = /https:\/\/github\.com\/user-attachments\/assets\/[a-f0-9\-]+/g;
+              while ((match = githubAssetsRegex.exec(body)) !== null) {
+                images.push(match[0]);
+              }
+              
+              // Eliminar duplicados
+              return [...new Set(images)];
             }
 
             sanitizeFilename(filename) {
@@ -252,15 +266,30 @@ jobs:
 
             async downloadImage(imageUrl, filename) {
               const fetch = (await import('node-fetch')).default;
-              const response = await fetch(imageUrl);
+              
+              console.log(`📥 Descargando imagen desde: ${imageUrl}`);
+              
+              // Si es una URL de GitHub assets, necesitamos usar el token de GitHub
+              let headers = {};
+              if (imageUrl.includes('github.com/user-attachments/assets')) {
+                headers['Authorization'] = `token ${CONFIG.githubToken}`;
+                headers['Accept'] = 'application/vnd.github.v3.raw';
+              }
+              
+              const response = await fetch(imageUrl, { headers });
               
               if (!response.ok) {
+                console.error(`Error descargando imagen: ${response.status} ${response.statusText}`);
                 throw new Error(`Error descargando imagen: ${response.status}`);
               }
 
               const buffer = await response.buffer();
+              console.log(`📦 Imagen descargada, tamaño: ${buffer.length} bytes`);
+              
               const imagePath = path.join(CONFIG.targetDir, `${filename}.jpg`);
               await fs.writeFile(imagePath, buffer);
+              console.log(`💾 Imagen guardada en: ${imagePath}`);
+              
               return imagePath;
             }
 
@@ -269,12 +298,37 @@ jobs:
 
               // Validar imagen si existe
               if (firstImage) {
-                console.log('📸 Validando imagen...');
-                const imageResult = await this.makeGroqRequest(CONFIG.imagePrompt, firstImage);
-                console.log(`Resultado imagen: ${imageResult}`);
+                console.log(`📸 Validando imagen: ${firstImage}`);
                 
-                if (imageResult.includes('NO_APTA')) {
-                  throw new Error('La imagen no es apropiada para todo público');
+                try {
+                  // Para imágenes de GitHub assets, necesitamos descargarla primero y convertir a base64
+                  let imageForValidation = firstImage;
+                  
+                  if (firstImage.includes('github.com/user-attachments/assets')) {
+                    console.log('📱 Descargando imagen de GitHub para validación...');
+                    const fetch = (await import('node-fetch')).default;
+                    const response = await fetch(firstImage, {
+                      headers: {
+                        'Authorization': `token ${CONFIG.githubToken}`,
+                        'Accept': 'application/vnd.github.v3.raw'
+                      }
+                    });
+                    
+                    if (response.ok) {
+                      const buffer = await response.buffer();
+                      imageForValidation = `data:image/jpeg;base64,${buffer.toString('base64')}`;
+                    }
+                  }
+                  
+                  const imageResult = await this.makeGroqRequest(CONFIG.imagePrompt, imageForValidation);
+                  console.log(`Resultado imagen: ${imageResult}`);
+                  
+                  if (imageResult.includes('NO_APTA')) {
+                    throw new Error('La imagen no es apropiada para todo público');
+                  }
+                } catch (imageError) {
+                  console.warn(`⚠️ No se pudo validar la imagen: ${imageError.message}`);
+                  console.log('📝 Continuando solo con validación de texto...');
                 }
               }
 
@@ -368,8 +422,9 @@ jobs:
                   parsedTitle: sections.title,
                   descriptionLength: sections.description.length,
                   fuentesCount: sections.fuentes.length,
-                  fuentes: sections.fuentes,
-                  imagesCount: images.length
+                  fuentes: sections.fuentes.slice(0, 3), // Solo mostrar las primeras 3 para no saturar el log
+                  imagesCount: images.length,
+                  firstImage: images[0] || 'ninguna'
                 });
 
                 // Validaciones básicas
