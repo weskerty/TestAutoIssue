@@ -5,7 +5,8 @@
 <img width="770" height="578" alt="Image" src="https://github.com/user-attachments/assets/e93279ff-f8d6-4376-a496-5a52fea9180d" />
 
 ### Santi Peña - ANR
-        MAs info a continuacion
+        MAs info a continuacion.
+Santi
 <h1> Corrupcion </h1>
 <h2>Fomento de la Corrupcion</h2>
 <p>En epoca de elecciones Santi Peña dijo </p>
