@@ -1,0 +1,477 @@
+const fs = require('fs').promises;
+const path = require('path');
+const { exec } = require('child_process');
+const { promisify } = require('util');
+
+const execAsync = promisify(exec);
+
+// Configuración
+const CONFIG = {
+  targetDir: 'web/Dinamico/Corrupcion',
+  groqApiKey: process.env.GROQ_API_KEY,
+  githubToken: process.env.GITHUB_TOKEN,
+  
+  // Configuración de prompts de IA
+  imagePrompt: `Analiza esta imagen y responde ÚNICAMENTE con "APTA" o "NO_APTA".
+  
+  Una imagen es APTA si:
+  - Es apropiada para todo público
+  - No contiene contenido sexual, pornográfico o desnudos
+  - No contiene violencia extrema o gore
+  - Es relevante para contenido informativo/periodístico
+  
+  Una imagen es NO_APTA si:
+  - Contiene desnudos o contenido sexual
+  - Muestra violencia extrema o sangre excesiva
+  - Es claramente inapropiada para menores
+  
+  Responde solo: APTA o NO_APTA`,
+
+  textPrompt: `Analiza el siguiente texto y fuentes, y responde ÚNICAMENTE con "VALIDO" o "INVALIDO".
+  
+  El texto es VÁLIDO si:
+  - Tiene coherencia y estructura lógica
+  - Presenta información detallada y específica
+  - Las fuentes son enlaces válidos y relevantes
+  - No es claramente spam, troll o sin sentido
+  - Tiene al menos 500 caracteres de contenido sustancial
+  - Las fuentes proporcionan contexto o evidencia
+  
+  El texto es INVÁLIDO si:
+  - Es muy corto o sin información útil
+  - Es claramente spam o troll
+  - Las fuentes no son relevantes o son falsas
+  - Contiene solo texto sin sentido
+  - No aporta información valiosa
+  
+  Responde solo: VALIDO o INVALIDO`
+};
+
+class IssueProcessor {
+  constructor() {
+    this.issueNumber = process.env.ISSUE_NUMBER;
+    this.issueTitle = process.env.ISSUE_TITLE;
+    this.issueBody = process.env.ISSUE_BODY;
+    this.issueUser = process.env.ISSUE_USER;
+  }
+
+  async makeGroqRequest(prompt, imageUrl = null) {
+    const fetch = (await import('node-fetch')).default;
+    
+    let messages = [];
+    
+    if (imageUrl) {
+      messages.push({
+        role: 'user',
+        content: [
+          { type: 'text', text: prompt },
+          { type: 'image_url', image_url: { url: imageUrl } }
+        ]
+      });
+    } else {
+      messages.push({
+        role: 'user',
+        content: prompt
+      });
+    }
+
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${CONFIG.groqApiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        messages,
+        model: imageUrl ? 'llama-vision-free' : 'llama-3.3-70b-versatile',
+        temperature: 0.1,
+        max_tokens: 100
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Groq API Error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data.choices[0].message.content.trim();
+  }
+
+  parseIssueBody(body) {
+    const sections = {
+      title: '',
+      description: '',
+      fuentes: []
+    };
+
+    // Extraer título - buscar después de "### 📌 Título"
+    const titleMatch = body.match(/### 📌 Título\s*\n\n(.*?)(?=\n### |$)/s);
+    if (titleMatch) {
+      sections.title = titleMatch[1].trim();
+    }
+
+    // Extraer descripción - buscar después de "### 📝 Descripción"
+    const descMatch = body.match(/### 📝 Descripción\s*\r?\n+([\s\S]*?)(?=\n### |$)/);
+
+    if (descMatch) {
+      sections.description = descMatch[1].trim();
+    }
+
+    // Extraer fuentes - buscar después de "### 🔗 Fuentes"
+    const fuentesMatch = body.match(/### 🔗 Fuentes\s*\n\n(.*?)(?=\n### |$)/s);
+    if (fuentesMatch) {
+      const fuentesText = fuentesMatch[1].trim();
+      
+      // Buscar todas las URLs en el texto
+      const urlRegex = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/g;
+      const urls = fuentesText.match(urlRegex) || [];
+      
+      // También buscar líneas que empiecen con - o * seguido de URL
+      const lines = fuentesText.split('\n');
+      const lineUrls = lines
+        .map(line => line.trim())
+        .filter(line => line.startsWith('-') || line.startsWith('*'))
+        .map(line => {
+          const match = line.match(/https?:\/\/[^\s<>"{}|\\^`\[\]]+/);
+          return match ? match[0] : null;
+        })
+        .filter(url => url !== null);
+      
+      // Combinar todas las URLs encontradas y eliminar duplicados
+      const allUrls = [...new Set([...urls, ...lineUrls])];
+      sections.fuentes = allUrls;
+    }
+
+    return sections;
+  }
+
+  extractImages(body) {
+    const images = [];
+    
+    // Buscar imágenes en formato markdown: ![alt](url)
+    const markdownRegex = /!\[.*?\]\((https?:\/\/[^\)]+)\)/g;
+    let match;
+    while ((match = markdownRegex.exec(body)) !== null) {
+      images.push(match[1]);
+    }
+    
+    // Buscar imágenes en formato HTML: <img src="url">
+    const htmlRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/g;
+    while ((match = htmlRegex.exec(body)) !== null) {
+      images.push(match[1]);
+    }
+    
+    // Buscar URLs de GitHub assets directamente
+    const githubAssetsRegex = /https:\/\/github\.com\/user-attachments\/assets\/[a-f0-9\-]+/g;
+    while ((match = githubAssetsRegex.exec(body)) !== null) {
+      images.push(match[0]);
+    }
+    
+    // Eliminar duplicados
+    return [...new Set(images)];
+  }
+
+  sanitizeFilename(filename) {
+    return filename
+      .normalize('NFD')                    // Normalizar caracteres Unicode
+      .replace(/[\u0300-\u036f]/g, '')     // Remover acentos
+      .replace(/[^\w\s\-_]/g, '')          // Solo letras, números, espacios, guiones y guiones bajos
+      .replace(/\s+/g, '_')                // Espacios por guiones bajos
+      .replace(/_+/g, '_')                 // Multiple guiones bajos por uno solo
+      .replace(/^_+|_+$/g, '')             // Remover guiones bajos al inicio/final
+      .toLowerCase()                       // Minúsculas
+      .substring(0, 50);                   // Máximo 50 caracteres
+  }
+
+  async fileExists(filepath) {
+    try {
+      await fs.access(filepath);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async findAvailableFilename(baseFilename, username) {
+    const basePath = path.join(CONFIG.targetDir, `${baseFilename}.md`);
+    
+    if (!(await this.fileExists(basePath))) {
+      return { filename: baseFilename, isNew: true };
+    }
+
+    try {
+      const existingContent = await fs.readFile(basePath, 'utf8');
+      const existingUser = this.extractUserFromFile(existingContent);
+      
+      if (username && existingUser === username) {
+        return { filename: baseFilename, canReplace: true };
+      }
+      
+      let counter = 1;
+      let newFilename;
+      let newPath;
+      
+      do {
+        newFilename = `${baseFilename}_${counter}`;
+        newPath = path.join(CONFIG.targetDir, `${newFilename}.md`);
+        counter++;
+      } while (await this.fileExists(newPath));
+      
+      return { filename: newFilename, isNew: true };
+      
+    } catch (error) {
+      console.error('Error leyendo archivo existente:', error);
+      throw error;
+    }
+  }
+
+  extractUserFromFile(content) {
+    const match = content.match(/<!-- usuario: (\w+) -->/);
+    return match ? match[1] : null;
+  }
+
+  async downloadImage(imageUrl, filename) {
+    const fetch = (await import('node-fetch')).default;
+    
+    console.log(`📥 Descargando imagen desde: ${imageUrl}`);
+    
+    // Si es una URL de GitHub assets, necesitamos usar el token de GitHub
+    let headers = {};
+    if (imageUrl.includes('github.com/user-attachments/assets')) {
+      headers['Authorization'] = `token ${CONFIG.githubToken}`;
+      headers['Accept'] = 'application/vnd.github.v3.raw';
+    }
+    
+    const response = await fetch(imageUrl, { headers });
+    
+    if (!response.ok) {
+      console.error(`Error descargando imagen: ${response.status} ${response.statusText}`);
+      throw new Error(`Error descargando imagen: ${response.status}`);
+    }
+
+    const buffer = await response.buffer();
+    console.log(`📦 Imagen descargada, tamaño: ${buffer.length} bytes`);
+    
+    const imagePath = path.join(CONFIG.targetDir, `${filename}.jpg`);
+    await fs.writeFile(imagePath, buffer);
+    console.log(`💾 Imagen guardada en: ${imagePath}`);
+    
+    return imagePath;
+  }
+
+  async validateContent(description, fuentes, firstImage) {
+    console.log('🔍 Validando contenido con IA...');
+
+    // Validar imagen si existe
+    if (firstImage) {
+      console.log(`📸 Validando imagen: ${firstImage}`);
+      
+      try {
+        // Para imágenes de GitHub assets, necesitamos descargarla primero y convertir a base64
+        let imageForValidation = firstImage;
+        
+        if (firstImage.includes('github.com/user-attachments/assets')) {
+          console.log('📱 Descargando imagen de GitHub para validación...');
+          const fetch = (await import('node-fetch')).default;
+          const response = await fetch(firstImage, {
+            headers: {
+              'Authorization': `token ${CONFIG.githubToken}`,
+              'Accept': 'application/vnd.github.v3.raw'
+            }
+          });
+          
+          if (response.ok) {
+            const buffer = await response.buffer();
+            imageForValidation = `data:image/jpeg;base64,${buffer.toString('base64')}`;
+          }
+        }
+        
+        const imageResult = await this.makeGroqRequest(CONFIG.imagePrompt, imageForValidation);
+        console.log(`Resultado imagen: ${imageResult}`);
+        
+        if (imageResult.includes('NO_APTA')) {
+          throw new Error('La imagen no es apropiada para todo público');
+        }
+      } catch (imageError) {
+        console.warn(`⚠️ No se pudo validar la imagen: ${imageError.message}`);
+        console.log('📝 Continuando solo con validación de texto...');
+      }
+    }
+
+    // Validar texto y fuentes
+    console.log('📝 Validando texto y fuentes...');
+    const textToValidate = `
+    DESCRIPCIÓN:
+    ${description}
+    
+    FUENTES:
+    ${fuentes.join('\n')}
+    `;
+    
+    const textResult = await this.makeGroqRequest(CONFIG.textPrompt + '\n\nTEXTO A ANALIZAR:\n' + textToValidate);
+    console.log(`Resultado texto: ${textResult}`);
+    
+    if (textResult.includes('INVALIDO')) {
+      throw new Error('El contenido del texto o las fuentes no son válidos');
+    }
+
+    console.log('✅ Validación exitosa');
+    return true;
+  }
+
+  async createMarkdownFile(filename, title, description, fuentes, username) {
+    let content = '';
+    if (username) {
+      content += `<!-- usuario: ${username} -->\n\n`;
+    }
+    
+    content += `# ${title}\n\n`;
+    content += `${description}\n\n`;
+    
+    if (fuentes.length > 0) {
+      content += `## Fuentes\n\n`;
+      fuentes.forEach(fuente => {
+        content += `- ${fuente}\n`;
+      });
+    }
+
+    const filePath = path.join(CONFIG.targetDir, `${filename}.md`);
+    await fs.writeFile(filePath, content, 'utf8');
+    return filePath;
+  }
+
+  async addComment(message, isError = false) {
+    const fetch = (await import('node-fetch')).default;
+    
+    const commentBody = isError ? 
+      `❌ **Error**: ${message}` : 
+      `✅ **Éxito**: ${message}`;
+
+    await fetch(`https://api.github.com/repos/${process.env.GITHUB_REPOSITORY}/issues/${this.issueNumber}/comments`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `token ${CONFIG.githubToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ body: commentBody })
+    });
+  }
+
+  async closeIssue() {
+    const fetch = (await import('node-fetch')).default;
+    
+    await fetch(`https://api.github.com/repos/${process.env.GITHUB_REPOSITORY}/issues/${this.issueNumber}`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `token ${CONFIG.githubToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ state: 'closed' })
+    });
+  }
+
+  async process() {
+    try {
+      console.log(`🚀 Procesando issue #${this.issueNumber} de ${this.issueUser}`);
+
+      // Validar API key
+      if (!CONFIG.groqApiKey) {
+        throw new Error('GROQ_API_KEY no está configurado');
+      }
+
+      // Parsear contenido del issue
+      const sections = this.parseIssueBody(this.issueBody);
+      const images = this.extractImages(this.issueBody);
+
+      console.log('📋 Contenido parseado:', {
+        issueTitle: this.issueTitle,
+        parsedTitle: sections.title,
+        descriptionLength: sections.description.length,
+        fuentesCount: sections.fuentes.length,
+        fuentes: sections.fuentes.slice(0, 3), // Solo mostrar las primeras 3 para no saturar el log
+        imagesCount: images.length,
+        firstImage: images[0] || 'ninguna'
+      });
+
+      // Validaciones básicas
+      const finalTitle = sections.title || this.issueTitle.replace(/^\[Info\]\s*/i, '').trim();
+      
+      if (!finalTitle || finalTitle.length < 3) {
+        throw new Error('El título es muy corto o está vacío');
+      }
+
+      if (!sections.description || sections.description.length < 500) {
+        throw new Error('La descripción debe tener al menos 500 caracteres');
+      }
+
+      if (sections.fuentes.length < 3) {
+        throw new Error('Debe proporcionar al menos 3 fuentes');
+      }
+
+      if (images.length === 0) {
+        throw new Error('Debe incluir al menos una imagen');
+      }
+
+      // Validar contenido con IA
+      await this.validateContent(sections.description, sections.fuentes, images[0]);
+
+      // Crear directorio si no existe
+      await fs.mkdir(CONFIG.targetDir, { recursive: true });
+
+      // Determinar nombre de archivo basado en el título del issue, no en el campo título interno
+      const issueTitle = this.issueTitle.replace(/^\[Info\]\s*/i, '').trim();
+      const sanitizedTitle = this.sanitizeFilename(issueTitle);
+      const fileInfo = await this.findAvailableFilename(sanitizedTitle, this.issueUser);
+      const finalFilename = fileInfo.filename;
+
+      // Descargar primera imagen
+      console.log('📥 Descargando imagen...');
+      await this.downloadImage(images[0], finalFilename);
+
+      // Crear archivo markdown
+      console.log('📝 Creando archivo markdown...');
+      await this.createMarkdownFile(
+        finalFilename, 
+        finalTitle, 
+        sections.description, 
+        sections.fuentes, 
+        this.issueUser
+      );
+
+      // Configurar git
+      await execAsync('git config --global user.name "GitHub Action"');
+      await execAsync('git config --global user.email "action@github.com"');
+
+      // Commit y push
+      console.log('📤 Realizando commit...');
+      await execAsync('git add .');
+      await execAsync(`git commit -m "Nueva entrada: ${finalTitle} (Issue #${this.issueNumber})"`);
+      await execAsync('git push');
+
+      // Mensaje de éxito
+      let successMessage = `Entrada creada exitosamente: **${finalTitle}**\n\n`;
+      successMessage += `📁 Archivo: \`${finalFilename}.md\`\n`;
+      successMessage += `👤 Usuario: ${this.issueUser}\n`;
+      successMessage += `📊 Fuentes encontradas: ${sections.fuentes.length}\n`;
+      
+      if (fileInfo.canReplace) {
+        successMessage += `🔄 Archivo reemplazado (mismo usuario)\n`;
+      } else if (finalFilename !== sanitizedTitle) {
+        successMessage += `🔢 Nuevo archivo creado (conflicto de nombre)\n`;
+      }
+
+      await this.addComment(successMessage);
+      await this.closeIssue();
+
+      console.log('✅ Issue procesado exitosamente');
+
+    } catch (error) {
+      console.error('❌ Error procesando issue:', error);
+      await this.addComment(error.message, true);
+    }
+  }
+}
+
+// Ejecutar procesador
+const processor = new IssueProcessor();
+processor.process();
