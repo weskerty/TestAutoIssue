@@ -8,9 +8,9 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "",
   "dependencies": {
     "form-data": "^4.0.4",
     "node-fetch": "^3.3.2"
-  }
+  },
+  "description": ""
 }
