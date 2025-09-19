@@ -1,0 +1,271 @@
+<div style="text-align:center;">
+
+ <!-- <div class="vocaroo-container">
+        <iframe width="300" height="60" src="https://vocaroo.com/embed/1bfn2LKLm9JE?autoplay=1" frameborder="0" allow="autoplay"></iframe>
+    </div> -->
+
+<img src="https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Travel%20and%20places/Sun%20with%20Face.png" alt="Man Technologist Medium-Dark Skin Tone" width="180px" />
+
+<h1>Por un Paraguay Mejor</h1>
+ <!-- <a href="web/readme.md">ReadmeTest</a> ·  <a href="web/readme.md">ReadmeTest</a> · </a>   -->
+        <h3>No mas Politicos Corruptos</h3>
+
+
+
+
+<p>Hoy en día tenemos una supuesta "Democracia" llamada "Democracia Representativa" en donde se vota por alguien que represente tus ideales. Pero este sistema tiene muchas fallas, Ejemplo;</p>
+
+<p>Un político en su campaña política dice que eliminará la corrupción, es afín a tu ideal. Pero <strong>¿qué sucede cuando representantes electos (los políticos) ignoran lo que prometieron al subir al poder?</strong></p>
+<p><em>Ejemplo:</em> Santi Peña Dicendo que solo los corruptos se les sube al poder</p>
+<p><em>Ejemplo 2:</em> Aprobar hacer un Obelisco con dinero prestado en vez de hacer cosas de mayor necesidad como lo es un hospital FUNCIONAL con recursos para funcionar correctamente.</p>
+<div class="section">
+    <h2>Más Ejemplos de Corrupción</h2>
+    <div class="gallery-container">
+        <div id="corrupcion-gallery" class="contenedor-imagenes-animado">
+           
+        </div>
+        <a href="web/Dinamico/Corrupcion/" class="view-all-button">Ver Lista Completa</a>
+    </div>
+</div>
+
+<p>Esto desconecta totalmente con la realidad de la población y muchos ya no se sienten representados con esas acciones.</p>
+
+<h2>La Nueva Propuesta;</h2>
+
+<p>Un <strong>modelo de democracia directa similar a paises como <a href="https://es.wikipedia.org/wiki/Suiza">Suiza</a> que combina la participación ciudadana.</strong>. En este sistema los políticos no son necesarios, la responsabilidad recae en cada ciudadano.</p>
+
+<p><em>Ejemplo:</em> Se requiere un hospital o una ley, entonces un ciudadano presenta en una reunión su idea ya documentada y bien planificada para que el resto de los ciudadanos la aprueben o no. De esta manera se elimina la corrupcion politica.</p>
+
+
+
+<div id="compartir-bloque" class="pulsos-section">
+  <div class="glowing-bg"></div>
+  <a href="web/otros/Markdowns/DemocraciaDirecta.md">
+    <h3>👉Clic Aqui para Saber Mas👈</h3>
+  </a>
+</div>
+
+
+
+
+
+</br>
+<div class="brillo-giratorio"> 
+   <h1>Grupos de Debate y Organización</h1>
+<p>Elige la Plataforma con la que te sientas mas comodo.</p>
+
+	<a href="https://chat.whatsapp.com/HXdpk6CpmSRDqHUOTLXp20"><img src="https://way-mark.ru/wp-content/uploads/2018/11/600px-WhatsApp_logo-color-vertical.svg_-160x160.png" alt="WhatsApp" height="128" /></a>
+	<a href="https://t.me/+CJQH_tIxev0xNjRh"><img src="https://front.com/assets/integrations/telegram/telegram_logo.png" alt="Telegram"  height="128" /></a>
+	<a href="web/otros/discordbot.html"><img src="https://github.com/user-attachments/assets/ad78bfde-436e-49f5-86a6-873fbb2a28b3" height="128" alt="Discord"  /></a>
+	<a href="https://matrix.to/#/#Politica:matrix.org"><img src="https://github.com/user-attachments/assets/7a1d0dbb-1284-45ad-a434-3bc054effe9a" height="128" alt="Matrix"  /></a>
+	<p>Los mensajes de [Discord - Matrix - Telegram] se sincronizan entre si. Los de WhatsApp NO por fallas con el bot. </p>
+    <p>No se recomienda usar WhatsApp por Privacidad.</p>
+  </div>
+
+<br>
+
+
+</br>
+
+<blockquote id="compartir-bloque">
+  <h3>
+    <a href="https://wa.me/?text=Eliminemos%20la%20corrupcion%20en%20Paraguay%2C%20Adios%20Politicos.%20Ayudame%20a%20lograrlo%20xurl.es%2FParaguayLibre" 
+       id="compartir-enlace"
+       style="text-decoration: none; color: inherit;">
+      Comparte el Cambio 🇵🇾💪
+    </a>
+  </h3>
+</blockquote>
+
+<script>
+  if (navigator.share) {
+    const enlace = document.getElementById('compartir-enlace');
+
+    enlace.removeAttribute('href');
+    enlace.style.cursor = 'pointer';
+
+    enlace.addEventListener('click', (e) => {
+      e.preventDefault(); 
+      navigator.share({
+        title: '😻 Compartir',
+        text: 'Comparte el Cambio',
+        url: window.location.href,
+      })
+      .then(() => console.log('Compartido exitosamente'))
+      .catch((error) => console.log('No se pudo compartir:', error));
+    });
+  }
+</script>
+
+
+</br>
+
+<div class="rss-section">
+    <h2>📰 Novedades</h2>
+    <div id="rss-section"></div>
+</div>
+
+<script>
+async function loadRSS() {
+    try {
+        const response = await fetch('https://api.rss2json.com/v1/api.json?rss_url=https://silpy.congreso.gov.py/web/FeedRss?opcionRSS=1');
+        const data = await response.json();
+        
+        const rssHTML = data.items.slice(0, 3).map(item => `
+            <div class="rss-item">
+                <h3><a href="${item.link}" target="_blank">${item.title}</a></h3>
+                <p>${item.description}</p>
+            </div>
+        `).join('');
+        
+        document.getElementById('rss-section').innerHTML = rssHTML;
+    } catch (error) {
+        document.getElementById('rss-section').innerHTML = '<p>Error Cargando Novedades</p>';
+    }
+}
+loadRSS();
+</script>
+
+</br>
+<div class="quote-rotator">
+<div class="mariposas-section">
+            <div class="butterfly"></div>
+            <div class="butterfly"></div>
+            <div class="butterfly"></div>
+  
+    <blockquote>
+        Cuando los políticos se creen dueños del país, es porque el pueblo ha olvidado que son sus empleados, no sus amos
+    </blockquote>
+
+    <blockquote>
+        Los ciudadanos no deben temer a su gobierno; el gobierno debe temer no cumplir con su pueblo.
+    </blockquote>
+
+    <blockquote>
+        La democracia desaparece cuando los políticos dejan de rendir cuentas y el pueblo deja de exigirlas.
+    </blockquote>
+    <blockquote>
+      El futuro pertenece a aquellos que creen en la belleza de sus sueños.
+      </blockquote>
+</div>
+</div>
+
+</br>
+    <blockquote class="red">
+        Toda persona pueden agregar info de manera anonima. Toda la información que se ve aquí ha sido recopilada de diversas fuentes como paginas noticias y articulos en Wikipedia. Cada Entrada tiene su Fuente de Referencia. 
+        
+    </blockquote>
+    </div>
+
+<!-- frases -->
+<script>
+const quotes = document.querySelectorAll('.quote-rotator blockquote');
+let index = 0;
+
+function showQuote(i) {
+  quotes.forEach((q, j) => q.style.display = j === i ? 'block' : 'none');
+}
+
+setInterval(() => {
+  index = (index + 1) % quotes.length;
+  showQuote(index);
+}, 9000);
+
+showQuote(0);
+</script>
+
+<!-- galerías -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/Swiper/8.4.5/swiper-bundle.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Swiper/8.4.5/swiper-bundle.min.js"></script>
+
+<script>
+
+async function loadGalleryData() {
+    try {
+        const response = await fetch('web/Dinamico/data.json');
+        const data = await response.json();
+        return data.galleries;
+    } catch (error) {
+        console.error('Error loading gallery data:', error);
+        return null;
+    }
+}
+
+function createSwiper(container, images) {
+    container.innerHTML = `
+        <div class="swiper-wrapper">
+            ${images.map(item => `
+                <div class="swiper-slide">
+                    <a href="${item.link}">
+                        <img src="${item.image}" alt="${item.name || 'Imagen'}" loading="lazy" />
+                    </a>
+                </div>
+            `).join('')}
+        </div>
+    `;
+
+    return new Swiper(container, {
+        slidesPerView: 'auto',
+        spaceBetween: 20,
+        loop: true,
+        centeredSlides: true,
+        autoplay: {
+            delay: 3000,
+            disableOnInteraction: false,
+        }
+    });
+}
+
+function parseInlineGalleryData(element) {
+    try {
+        const content = element.textContent.trim();
+        if (!content) return null;
+        const jsonStr = `[${content}]`;
+        return { images: JSON.parse(jsonStr) };
+    } catch (error) {
+        console.error('Error parsing gallery data:', error);
+        return null;
+    }
+}
+
+async function initializeAllGalleries() {
+    if (typeof Swiper === 'undefined') {
+        console.error('Swiper no disponible');
+        return;
+    }
+    const allGalleryData = await loadGalleryData();
+    
+    if (allGalleryData && allGalleryData.Corrupcion) {
+        const corrupcionContainer = document.getElementById('corrupcion-gallery');
+        if (corrupcionContainer && allGalleryData.Corrupcion.images?.length > 0) {
+            corrupcionContainer.classList.add('swiper');
+            createSwiper(corrupcionContainer, allGalleryData.Corrupcion.images);
+            console.log('Galería de Corrupción inicializada');
+        }
+    } else {
+        console.warn('falla galeria "Corrupcion" en data.json');
+    }
+
+    const inlineGalleries = document.querySelectorAll('.contenedor-imagenes-animado:not([id])');
+    
+    inlineGalleries.forEach(async (container) => {
+        const inlineData = parseInlineGalleryData(container);
+        if (inlineData) {
+            container.classList.add('swiper');
+            createSwiper(container, inlineData.images);
+        }
+    });
+}
+
+function waitForSwiperAndInit() {
+    if (typeof Swiper !== 'undefined') {
+        console.log('Swiper cargado, inicializando galeria...');
+        initializeAllGalleries();
+    } else {
+        console.log('Esperando Swiper...');
+        setTimeout(waitForSwiperAndInit, 100);
+    }
+}
+
+waitForSwiperAndInit();
+</script>

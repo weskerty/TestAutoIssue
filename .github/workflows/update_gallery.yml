@@ -1,0 +1,41 @@
+name: Update Gallery JSON
+
+on:
+  push:
+    paths:
+      - 'web/Dinamico/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-json:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+      
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.x'
+          
+      - name: List directory structure
+        run: |
+          ls -R web/Dinamico/
+          
+      - name: Update gallery JSON
+        run: |
+          python .github/scripts/update_gallery.py
+          
+      - name: Commit changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add web/Dinamico/data.json
+          git diff --staged --quiet || git commit -m "Update gallery data"
+          git push
+
+          

@@ -1,0 +1,37 @@
+name: Agregar Información 📌
+description: Agrega mas perfiles a la Web.
+title: "[Info] "
+labels: ["info"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: "## 📝 Llena los detalles a continuación"
+
+  - type: input
+    id: title
+    attributes:
+      label: "📌 Título"
+      description: "Escribe un título corto y descriptivo No repetido."
+      placeholder: "Ejemplo: Nombre de Empresa o Político"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: "📝 Descripción"
+      description: "Explica los detalles que serán mostrados en el artículo."
+      placeholder: "Escribe aquí la información..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: fuentes
+    attributes:
+      label: "🔗 Fuentes"
+      description: "Añade enlaces a fuentes confiables (ejemplo: noticias, documentos oficiales)."
+      placeholder: "Ejemplo:\n- https://ejemplo.com/fuente1\n- https://ejemplo.com/fuente2"
+    validations:
+      required: true

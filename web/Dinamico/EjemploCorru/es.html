@@ -1,0 +1,48 @@
+<div style="text-align:center;">
+    <h1>Lista Completa de Casos de Corrupción</h1>
+    <div class="grid-gallery" id="corrupcion-grid">
+        <!-- imagenes dinamicas -->
+    </div>
+    
+    <a href="web/es.html" class="back-button">← Volver al Inicio</a>
+</div>
+
+<script>
+async function loadGalleryData() {
+    try {
+        const response = await fetch('web/Dinamico/data.json');
+        const data = await response.json();
+        return data.galleries;
+    } catch (error) {
+        console.error('Error loading gallery data:', error);
+        return null;
+    }
+}
+
+function createGridGallery(container, images) {
+    container.innerHTML = images.map(item => `
+        <a href="${item.link}">
+            <img src="${item.image}" alt="${item.name || 'Imagen'}" loading="lazy" />
+        </a>
+    `).join('');
+}
+
+async function initializeCompleteGallery() {
+    const galleryData = await loadGalleryData();
+    
+    if (galleryData && galleryData.Corrupcion) {
+        const container = document.getElementById('corrupcion-grid');
+        if (container && galleryData.Corrupcion.images?.length > 0) {
+            createGridGallery(container, galleryData.Corrupcion.images);
+        }
+    } else {
+        const container = document.getElementById('corrupcion-grid');
+        if (container) {
+            container.innerHTML = '<p>No se encontraron casos de corrupción xd</p>';
+        }
+    }
+}
+
+
+initializeCompleteGallery();
+</script>

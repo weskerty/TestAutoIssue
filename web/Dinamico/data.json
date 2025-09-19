@@ -1,0 +1,37 @@
+{
+  "galleries": {
+    "Corrupcion": {
+      "images": [
+        {
+          "image": "web/Dinamico/Corrupcion/SantiPeña.jpg",
+          "link": "web/Dinamico/Corrupcion/SantiPeña.md",
+          "name": "SantiPeña"
+        },
+        {
+          "image": "web/Dinamico/Corrupcion/capibara_1.jpg",
+          "link": "web/Dinamico/Corrupcion/capibara_1.md",
+          "name": "capibara_1"
+        },
+        {
+          "image": "web/Dinamico/Corrupcion/paz.jpg",
+          "link": "web/Dinamico/Corrupcion/paz.md",
+          "name": "paz"
+        }
+      ]
+    },
+    "EjemploCorru": {
+      "images": [
+        {
+          "image": "web/Dinamico/EjemploCorru/Nenecho.png",
+          "link": "web/Dinamico/EjemploCorru/Nenecho.html",
+          "name": "Nenecho"
+        },
+        {
+          "image": "web/Dinamico/EjemploCorru/SantiPeña1.jpg",
+          "link": "web/Dinamico/EjemploCorru/SantiPeña1.md",
+          "name": "SantiPeña1"
+        }
+      ]
+    }
+  }
+}
