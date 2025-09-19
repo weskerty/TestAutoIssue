@@ -146,8 +146,11 @@ jobs:
               }
 
               // Extraer descripción - buscar después de "### 📝 Descripción"
-const descMatch = body.match(/### 📝 Descripción\s*\r?\n+([\s\S]*?)(?=\n### |$)/);
+              const descMatch = body.match(/### 📝 Descripción\s*\r?\n+([\s\S]*?)(?=\n### |$)/);
 
+              if (descMatch) {
+                sections.description = descMatch[1].trim();
+              }
 
               // Extraer fuentes - buscar después de "### 🔗 Fuentes"
               const fuentesMatch = body.match(/### 🔗 Fuentes\s*\n\n(.*?)(?=\n### |$)/s);
