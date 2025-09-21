@@ -1,7 +1,13 @@
 {
   "galleries": {
     "Corrupcion": {
-      "images": []
+      "images": [
+        {
+          "image": "web/Dinamico/Corrupcion/santi_pena.jpg",
+          "link": "web/Dinamico/Corrupcion/santi_pena.md",
+          "name": "santi_pena"
+        }
+      ]
     },
     "EjemploCorru": {
       "images": [
