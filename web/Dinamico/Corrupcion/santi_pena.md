@@ -1,6 +1,6 @@
 <!-- participant: weskerty -->
 
-# Santi Peña
+# Santi Peña, Presidente Actual 2023-2026.
 
 <img width="770" height="578" alt="Image" src="https://github.com/user-attachments/assets/e93279ff-f8d6-4376-a496-5a52fea9180d" />
 
