@@ -3,9 +3,11 @@
 # Santi Peña
 
 ### Santi Peña - ANR
-        MAs info a continuacion.
+
 <img width="770" height="578" alt="Image" src="https://github.com/user-attachments/assets/e93279ff-f8d6-4376-a496-5a52fea9180d" />
-Santi
+
+
+
 <h1> Corrupcion </h1>
 <h2>Fomento de la Corrupcion</h2>
 <p>En epoca de elecciones Santi Peña dijo </p>
@@ -60,6 +62,6 @@ Se agregaran mas datos en un futuro
 
 ## Fuentes
 
-- https://www.abc.com.py/politica/2025/09/16/despidos-destapan-escandalo-de-sobres-con-miles-de-us-en-mburuvicha-roga/
 - https://www.ip.gov.py/ip/2025/08/18/pena-afirma-que-no-se-tienen-recursos-para-incrementar-salario-a-docentes
+- https://www.abc.com.py/politica/2025/09/16/despidos-destapan-escandalo-de-sobres-con-miles-de-us-en-mburuvicha-roga/
 - https://www.abc.com.py/nacionales/2023/07/25/horqueta-ya-no-queremos-estar-bajo-los-arboles-dijo-alumna-de-escuela-sin-techo/
