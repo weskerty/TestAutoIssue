@@ -139,7 +139,7 @@ jobs:
                       content_element = heading.find_next_sibling('p')
                       
                       if content_element:
-                          content = content_element.get_text(separator=' ', strip=True)
+                          content = content_element.get_text().strip()
                           
                           if 'Título' in heading_text:
                               sections['title'] = content
