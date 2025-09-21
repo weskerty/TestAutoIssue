@@ -1,4 +1,4 @@
-<!-- usuario: weskerty -->
+<!-- participant: weskerty -->
 
 # Santi Peña
 
