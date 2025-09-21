@@ -583,32 +583,18 @@ jobs:
 
               def run_git_command(self, command: str) -> None:
                   """Ejecuta un comando git en el directorio del workspace."""
-                  # Asegurar que estamos en el directorio correcto
                   workspace_dir = os.environ['GITHUB_WORKSPACE']
-                  
-                  # Para comandos con mensajes, usar shell=True para manejar comillas correctamente
-                  if 'commit -m' in command:
-                      result = subprocess.run(
-                          command, 
-                          capture_output=True, 
-                          text=True, 
-                          cwd=workspace_dir,
-                          shell=True
-                      )
-                  else:
-                      result = subprocess.run(
-                          command.split(), 
-                          capture_output=True, 
-                          text=True, 
-                          cwd=workspace_dir
-                      )
-                      
+                  result = subprocess.run(
+                      command.split(), 
+                      capture_output=True, 
+                      text=True, 
+                      cwd=workspace_dir
+                  )
                   if result.returncode != 0:
                       print(f"Error ejecutando: {command}")
                       print(f"STDOUT: {result.stdout}")
                       print(f"STDERR: {result.stderr}")
                       print(f"Working directory: {workspace_dir}")
-                      print(f"Return code: {result.returncode}")
                       raise Exception(f'Git command failed: {result.stderr}')
 
               def process(self) -> None:
@@ -683,10 +669,7 @@ jobs:
 
                       print('📤 Realizando commit...')
                       self.run_git_command('git add .')
-                      
-                      # Usar título limpio en el mensaje de commit
-                      commit_message = f'Nueva entrada: {clean_title} (Issue #{self.issue_number})'
-                      self.run_git_command(f'git commit -m "{commit_message}"')
+                      self.run_git_command('git commit -m "Nueva entrada"')
                       self.run_git_command('git push')
 
                       # Mensaje de éxito
