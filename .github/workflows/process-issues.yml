@@ -23,7 +23,7 @@ jobs:
           mkdir -p /tmp/issue-processor
           cd /tmp/issue-processor
           npm init -y
-          npm install node-fetch form-data
+          npm install node-fetch form-data cheerio sharp
 
       - name: Process Issue
         env:
@@ -41,6 +41,7 @@ jobs:
           const path = require('path');
           const { exec } = require('child_process');
           const { promisify } = require('util');
+          const cheerio = require('cheerio');
 
           const execAsync = promisify(exec);
 
@@ -48,8 +49,10 @@ jobs:
             targetDir: path.join(process.env.GITHUB_WORKSPACE, 'web/Dinamico/Corrupcion'),
             groqApiKey: process.env.GROQ_API_KEY,
             githubToken: process.env.GITHUB_TOKEN,
+            baseCommitMessage: 'Nueva Entrada:',
+            botSignature: 'IssueBot',
+            maxFilenameLength: 100,
             
-            // prompts 
             imagePrompt: `Analiza esta imagen y responde ÚNICAMENTE con "APTA" o "NO_APTA".
             
             Una imagen es APTA si:
@@ -71,15 +74,16 @@ jobs:
             - Tiene coherencia y estructura lógica
             - Presenta información detallada y específica
             - Las fuentes son enlaces válidos y relevantes
-            - No es claramente spam, troll o sin sentido
+            - No es claramente spam, troll, discurso de odio o sin sentido
             - Tiene al menos 500 caracteres de contenido sustancial
             - Las fuentes proporcionan contexto o evidencia
             
             El texto es INVÁLIDO si:
             - Es muy corto o sin información útil
-            - Es claramente spam o troll
+            - Es claramente spam, troll, discurso de odio o sin sentido
             - Las fuentes no son relevantes o son falsas
             - Contiene solo texto sin sentido
+            - No aporta información valiosa
             - Contiene Scripts Sospechosos no relacionado a reproduccion multimedia
             
             Responde solo: VALIDO o INVALIDO`
@@ -91,19 +95,21 @@ jobs:
               this.issueTitle = process.env.ISSUE_TITLE;
               this.issueBody = process.env.ISSUE_BODY;
               this.issueUser = process.env.ISSUE_USER;
+              this.imageBuffer = null;
             }
 
-            async makeGroqRequest(prompt, imageUrl = null) {
+            async makeGroqRequest(prompt, imageBuffer = null) {
               const fetch = (await import('node-fetch')).default;
               
               let messages = [];
               
-              if (imageUrl) {
+              if (imageBuffer) {
+                const imageDataUrl = `data:image/jpeg;base64,${imageBuffer.toString('base64')}`;
                 messages.push({
                   role: 'user',
                   content: [
                     { type: 'text', text: prompt },
-                    { type: 'image_url', image_url: { url: imageUrl } }
+                    { type: 'image_url', image_url: { url: imageDataUrl } }
                   ]
                 });
               } else {
@@ -121,7 +127,7 @@ jobs:
                 },
                 body: JSON.stringify({
                   messages,
-                  model: imageUrl ? 'meta-llama/llama-4-maverick-17b-128e-instruct' : 'llama-3.3-70b-versatile',
+                  model: imageBuffer ? 'meta-llama/llama-4-maverick-17b-128e-instruct' : 'llama-3.3-70b-versatile',
                   temperature: 0.1,
                   max_tokens: 100
                 })
@@ -135,22 +141,50 @@ jobs:
               return data.choices[0].message.content.trim();
             }
 
-            parseIssueBody(body) {
+            parseIssueBodyHTML(body) {
+              const $ = cheerio.load(body);
               const sections = {
                 title: '',
                 description: '',
                 fuentes: []
               };
 
+              $('h3').each((i, el) => {
+                const heading = $(el).text().trim();
+                const content = $(el).next('p').text().trim();
+                
+                if (heading.includes('Título')) {
+                  sections.title = content;
+                } else if (heading.includes('Descripción')) {
+                  sections.description = content;
+                } else if (heading.includes('Fuentes')) {
+                  const fuentesText = content;
+                  const urlRegex = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/g;
+                  const urls = fuentesText.match(urlRegex) || [];
+                  sections.fuentes = [...new Set(urls)];
+                }
+              });
+
+              if (!sections.title || !sections.description || sections.fuentes.length === 0) {
+                return this.parseIssueBodyFallback(body);
+              }
+
+              return sections;
+            }
+
+            parseIssueBodyFallback(body) {
+              const sections = {
+                title: '',
+                description: '',
+                fuentes: []
+              };
 
               const titleMatch = body.match(/### 📌 Título\s*\n\n(.*?)(?=\n### |$)/s);
               if (titleMatch) {
                 sections.title = titleMatch[1].trim();
               }
 
-
               const descMatch = body.match(/### 📝 Descripción\s*\r?\n+([\s\S]*?)(?=\n### |$)/);
-
               if (descMatch) {
                 sections.description = descMatch[1].trim();
               }
@@ -158,11 +192,8 @@ jobs:
               const fuentesMatch = body.match(/### 🔗 Fuentes\s*\n\n(.*?)(?=\n### |$)/s);
               if (fuentesMatch) {
                 const fuentesText = fuentesMatch[1].trim();
-                
-                // Buscar todas las URLs e
                 const urlRegex = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/g;
                 const urls = fuentesText.match(urlRegex) || [];
-                
                 const lines = fuentesText.split('\n');
                 const lineUrls = lines
                   .map(line => line.trim())
@@ -173,7 +204,6 @@ jobs:
                   })
                   .filter(url => url !== null);
                 
-
                 const allUrls = [...new Set([...urls, ...lineUrls])];
                 sections.fuentes = allUrls;
               }
@@ -181,42 +211,47 @@ jobs:
               return sections;
             }
 
-            extractImages(body) {
-              const images = [];
+            extractFirstImage(body) {
+              const markdownRegex = /!\[.*?\]\((https?:\/\/[^\)]+)\)/;
+              const markdownMatch = body.match(markdownRegex);
+              if (markdownMatch) return markdownMatch[1];
               
-              // Buscar imágenes markdown: ![alt](url)
-              const markdownRegex = /!\[.*?\]\((https?:\/\/[^\)]+)\)/g;
-              let match;
-              while ((match = markdownRegex.exec(body)) !== null) {
-                images.push(match[1]);
-              }
+              const htmlRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/;
+              const htmlMatch = body.match(htmlRegex);
+              if (htmlMatch) return htmlMatch[1];
               
-              //  imágenes HTML: <img src="url">
-              const htmlRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/g;
-              while ((match = htmlRegex.exec(body)) !== null) {
-                images.push(match[1]);
-              }
+              const githubAssetsRegex = /https:\/\/github\.com\/user-attachments\/assets\/[a-f0-9\-]+/;
+              const assetsMatch = body.match(githubAssetsRegex);
+              if (assetsMatch) return assetsMatch[0];
               
-              // Buscar URLs de GitHub assets directamente
-              const githubAssetsRegex = /https:\/\/github\.com\/user-attachments\/assets\/[a-f0-9\-]+/g;
-              while ((match = githubAssetsRegex.exec(body)) !== null) {
-                images.push(match[0]);
-              }
-              
-              // Eliminar duplicados
-              return [...new Set(images)];
+              return null;
             }
 
             sanitizeFilename(filename) {
-              return filename
-                .normalize('NFD')                    // Normalizar caracteres Unicode
-                .replace(/[\u0300-\u036f]/g, '')     // Remover acentos
-                .replace(/[^\w\s\-_]/g, '')          // Solo letras, números, espacios, guiones y guiones bajos
-                .replace(/\s+/g, '_')                // Espacios por guiones bajos
-                .replace(/_+/g, '_')                 // Multiple guiones bajos por uno solo
-                .replace(/^_+|_+$/g, '')             // Remover guiones bajos al inicio/final
-                .toLowerCase()                       // Minúsculas
-                .substring(0, 50);                   // Máximo 50 caracteres
+              let sanitized = filename
+                .replace(/[<>:"/\\|?*#@!$%^&()+={}[\]~`]/g, '')
+                .replace(/[\s\-]+/g, '_')
+                .replace(/\.{2,}/g, '.')
+                .replace(/^\.+|\.+$/g, '')
+                .replace(/[^\w._]/g, '')
+                .toLowerCase()
+                .replace(/_{2,}/g, '_')
+                .replace(/^_+|_+$/g, '');
+
+              if (!sanitized || sanitized === '') {
+                sanitized = 'entrada_sin_nombre';
+              }
+
+              if (sanitized.length > CONFIG.maxFilenameLength) {
+                sanitized = sanitized.substring(0, CONFIG.maxFilenameLength);
+                sanitized = sanitized.replace(/_+$/, '');
+              }
+
+              if (/^\d/.test(sanitized)) {
+                sanitized = 'entrada_' + sanitized;
+              }
+
+              return sanitized;
             }
 
             async fileExists(filepath) {
@@ -257,7 +292,18 @@ jobs:
                 
               } catch (error) {
                 console.error('Error leyendo archivo existente:', error);
-                throw error;
+                
+                let counter = 1;
+                let newFilename;
+                let newPath;
+                
+                do {
+                  newFilename = `${baseFilename}_${counter}`;
+                  newPath = path.join(CONFIG.targetDir, `${newFilename}.md`);
+                  counter++;
+                } while (await this.fileExists(newPath));
+                
+                return { filename: newFilename, isNew: true };
               }
             }
 
@@ -266,11 +312,10 @@ jobs:
               return match ? match[1] : null;
             }
 
-            async downloadImage(imageUrl, filename) {
+            async downloadAndProcessImage(imageUrl) {
               const fetch = (await import('node-fetch')).default;
               
               console.log(`📥 Descargando imagen desde: ${imageUrl}`);
-              
               
               let headers = {};
               if (imageUrl.includes('github.com/user-attachments/assets')) {
@@ -281,59 +326,62 @@ jobs:
               const response = await fetch(imageUrl, { headers });
               
               if (!response.ok) {
-                console.error(`Error descargando imagen: ${response.status} ${response.statusText}`);
                 throw new Error(`Error descargando imagen: ${response.status}`);
               }
 
               const buffer = await response.buffer();
               console.log(`📦 Imagen descargada, tamaño: ${buffer.length} bytes`);
               
-              const imagePath = path.join(CONFIG.targetDir, `${filename}.jpg`);
-              await fs.writeFile(imagePath, buffer);
-              console.log(`💾 Imagen guardada en: ${imagePath}`);
+              try {
+                const sharp = require('sharp');
+                const cleanedBuffer = await sharp(buffer)
+                  .jpeg({ quality: 90 })
+                  .removeAlpha()
+                  .withMetadata({})
+                  .toBuffer();
+                
+                console.log('🧹 Metadatos removidos de la imagen');
+                this.imageBuffer = cleanedBuffer;
+                return cleanedBuffer;
+              } catch (sharpError) {
+                console.warn('⚠️ No se pudo limpiar metadatos, usando imagen original');
+                this.imageBuffer = buffer;
+                return buffer;
+              }
+            }
+
+            async saveProcessedImage(filename) {
+              if (!this.imageBuffer) {
+                throw new Error('No hay imagen procesada para guardar');
+              }
               
+              const imagePath = path.join(CONFIG.targetDir, `${filename}.jpg`);
+              await fs.writeFile(imagePath, this.imageBuffer);
+              console.log(`💾 Imagen guardada en: ${imagePath}`);
               return imagePath;
             }
 
-            async validateContent(description, fuentes, firstImage) {
+            async validateContent(description, fuentes, imageBuffer) {
               console.log('🔍 Validando contenido con IA...');
 
-              if (firstImage) {
-                console.log(`📸 Validando imagen: ${firstImage}`);
+              if (imageBuffer) {
+                console.log('📸 Validando imagen...');
                 
                 try {
-                  // imágenes GitHub assets descargarla convertir a base64
-                  let imageForValidation = firstImage;
-                  
-                  if (firstImage.includes('github.com/user-attachments/assets')) {
-                    console.log('📱 Descargando imagen de GitHub para validación...');
-                    const fetch = (await import('node-fetch')).default;
-                    const response = await fetch(firstImage, {
-                      headers: {
-                        'Authorization': `token ${CONFIG.githubToken}`,
-                        'Accept': 'application/vnd.github.v3.raw'
-                      }
-                    });
-                    
-                    if (response.ok) {
-                      const buffer = await response.buffer();
-                      imageForValidation = `data:image/jpeg;base64,${buffer.toString('base64')}`;
-                    }
-                  }
-                  
-                  const imageResult = await this.makeGroqRequest(CONFIG.imagePrompt, imageForValidation);
+                  const imageResult = await this.makeGroqRequest(CONFIG.imagePrompt, imageBuffer);
                   console.log(`Resultado imagen: ${imageResult}`);
                   
                   if (imageResult.includes('NO_APTA')) {
-                    throw new Error('La imagen no es apropiada para todo público');
+                    throw new Error('La imagen no es apropiada para todo público. Sigue las Reglas.');
                   }
                 } catch (imageError) {
+                  if (imageError.message.includes('Sigue las Reglas')) {
+                    throw imageError;
+                  }
                   console.warn(`⚠️ No se pudo validar la imagen: ${imageError.message}`);
-                  console.log('📝 Continuando solo con validación de texto...');
                 }
               }
 
-              // Validar texto y fuentes
               console.log('📝 Validando texto y fuentes...');
               const textToValidate = `
               DESCRIPCIÓN:
@@ -347,7 +395,7 @@ jobs:
               console.log(`Resultado texto: ${textResult}`);
               
               if (textResult.includes('INVALIDO')) {
-                throw new Error('El contenido del texto o las fuentes no son válidos');
+                throw new Error('El contenido del texto o las fuentes no son válidos. Sigue las Reglas.');
               }
 
               console.log('✅ Validación exitosa');
@@ -409,14 +457,12 @@ jobs:
               try {
                 console.log(`🚀 Procesando issue #${this.issueNumber} de ${this.issueUser}`);
 
-
                 if (!CONFIG.groqApiKey) {
                   throw new Error('GROQ_API_KEY no está configurado');
                 }
 
-
-                const sections = this.parseIssueBody(this.issueBody);
-                const images = this.extractImages(this.issueBody);
+                const sections = this.parseIssueBodyHTML(this.issueBody);
+                const firstImage = this.extractFirstImage(this.issueBody);
 
                 console.log('📋 Contenido parseado:', {
                   issueTitle: this.issueTitle,
@@ -424,10 +470,8 @@ jobs:
                   descriptionLength: sections.description.length,
                   fuentesCount: sections.fuentes.length,
                   fuentes: sections.fuentes.slice(0, 3), 
-                  imagesCount: images.length,
-                  firstImage: images[0] || 'ninguna'
+                  firstImage: firstImage || 'ninguna'
                 });
-
 
                 const finalTitle = sections.title || this.issueTitle.replace(/^\[Info\]\s*/i, '').trim();
                 
@@ -440,29 +484,24 @@ jobs:
                 }
 
                 if (sections.fuentes.length < 3) {
-                  throw new Error('Debe proporcionar al menos 3 fuentes');
+                  throw new Error('Debe proporcionar al menos 3 fuentes (URLs)');
                 }
 
-                if (images.length === 0) {
+                if (!firstImage) {
                   throw new Error('Debe incluir al menos una imagen');
                 }
 
-                await this.validateContent(sections.description, sections.fuentes, images[0]);
-
+                const imageBuffer = await this.downloadAndProcessImage(firstImage);
+                await this.validateContent(sections.description, sections.fuentes, imageBuffer);
 
                 await fs.mkdir(CONFIG.targetDir, { recursive: true });
 
-
-                const issueTitle = this.issueTitle.replace(/^\[Info\]\s*/i, '').trim();
-                const sanitizedTitle = this.sanitizeFilename(issueTitle);
+                const sanitizedTitle = this.sanitizeFilename(finalTitle);
                 const fileInfo = await this.findAvailableFilename(sanitizedTitle, this.issueUser);
                 const finalFilename = fileInfo.filename;
 
-                // Descargar primera imagen
-                console.log('📥 Descargando imagen...');
-                await this.downloadImage(images[0], finalFilename);
+                await this.saveProcessedImage(finalFilename);
 
-                // Crear archivo markdown
                 console.log('📝 Creando archivo markdown...');
                 await this.createMarkdownFile(
                   finalFilename, 
@@ -472,19 +511,16 @@ jobs:
                   this.issueUser
                 );
 
-
                 process.chdir(process.env.GITHUB_WORKSPACE);
-
 
                 await execAsync('git config --global user.name "GitHub Action"');
                 await execAsync('git config --global user.email "action@github.com"');
 
-
                 console.log('📤 Realizando commit...');
+                const commitMessage = `${CONFIG.baseCommitMessage} ${finalFilename} ${CONFIG.botSignature}`;
                 await execAsync('git add .');
-                await execAsync(`git commit -m "Nueva entrada: ${finalTitle} (Issue #${this.issueNumber})"`);
+                await execAsync(`git commit -m "${commitMessage}"`);
                 await execAsync('git push');
-
 
                 let successMessage = `Entrada creada exitosamente: **${finalTitle}**\n\n`;
                 successMessage += `📁 Archivo: \`${finalFilename}.md\`\n`;
@@ -509,7 +545,6 @@ jobs:
             }
           }
 
-    
           const processor = new IssueProcessor();
           processor.process();
           EOF
