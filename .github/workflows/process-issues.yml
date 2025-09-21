@@ -32,6 +32,7 @@ jobs:
           ISSUE_USER: ${{ github.event.issue.user.login }}
           GITHUB_WORKSPACE: ${{ github.workspace }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+        working-directory: ${{ github.workspace }}
         run: |
           python3 << 'EOF'
           import os
@@ -208,6 +209,214 @@ jobs:
                   # Minúsculas y máximo 50 caracteres
                   return filename.lower()[:50]
 
+              def clean_title_for_commit(self, title: str) -> str:
+                  """Limpia un título para uso seguro en comandos git."""
+                  # Remover HTML/markdown tags
+                  title = re.sub(r'<[^>]+>', '', title)
+                  # Remover markdown images ![alt](url)
+                  title = re.sub(r'!\[.*?\]\([^)]+\)', '', title)
+                  # Remover saltos de línea y espacios extra
+                  title = re.sub(r'\s+', ' ', title)
+                  # Remover caracteres problemáticos para comandos shell
+                  title = re.sub(r'[<>"|&;name: 'Procesar Issues Automáticamente'
+
+on:
+  issues:
+    types: [opened, edited]
+
+jobs:
+  process-issue:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Install Python dependencies
+        run: |
+          pip install requests
+
+      - name: Process Issue
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_USER: ${{ github.event.issue.user.login }}
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        working-directory: ${{ github.workspace }}
+        run: |
+          python3 << 'EOF'
+          import os
+          import json
+          import re
+          import subprocess
+          import requests
+          import base64
+          import unicodedata
+          from pathlib import Path
+          from typing import Dict, List, Optional, Tuple
+
+          class IssueProcessor:
+              def __init__(self):
+                  self.target_dir = Path(os.environ['GITHUB_WORKSPACE']) / 'web' / 'Dinamico' / 'Corrupcion'
+                  self.groq_api_key = os.environ.get('GROQ_API_KEY')
+                  self.github_token = os.environ.get('GITHUB_TOKEN')
+                  self.github_repo = os.environ.get('GITHUB_REPOSITORY')
+                  self.issue_number = os.environ.get('ISSUE_NUMBER')
+                  self.issue_title = os.environ.get('ISSUE_TITLE', '')
+                  self.issue_body = os.environ.get('ISSUE_BODY', '')
+                  self.issue_user = os.environ.get('ISSUE_USER', '')
+                  
+                  self.image_prompt = """Analiza esta imagen y responde ÚNICAMENTE con "APTA" o "NO_APTA".
+          
+          Una imagen es APTA si:
+          - Es apropiada para todo público
+          - No contiene contenido sexual, pornográfico o desnudos
+          - No contiene violencia extrema o gore
+          - Es relevante para contenido informativo/periodístico
+          
+          Una imagen es NO_APTA si:
+          - Contiene desnudos o contenido sexual
+          - Muestra violencia extrema o sangre excesiva
+          - Es claramente inapropiada para menores
+          
+          Responde solo: APTA o NO_APTA"""
+
+                  self.text_prompt = """Analiza el siguiente texto y fuentes, y responde ÚNICAMENTE con "VALIDO" o "INVALIDO".
+          
+          El texto es VÁLIDO si:
+          - Tiene coherencia y estructura lógica
+          - Presenta información detallada y específica
+          - Las fuentes son enlaces válidos y relevantes
+          - No es claramente spam, troll o sin sentido
+          - Tiene al menos 500 caracteres de contenido sustancial
+          - Las fuentes proporcionan contexto o evidencia
+          
+          El texto es INVÁLIDO si:
+          - Es muy corto o sin información útil
+          - Es claramente spam o troll
+          - Las fuentes no son relevantes o son falsas
+          - Contiene solo texto sin sentido
+          - Contiene Scripts Sospechosos no relacionado a reproduccion multimedia
+          
+          Responde solo: VALIDO o INVALIDO"""
+
+              def make_groq_request(self, prompt: str, image_url: Optional[str] = None) -> str:
+                  """Hace una petición a la API de Groq."""
+                  messages = []
+                  
+                  if image_url:
+                      messages.append({
+                          'role': 'user',
+                          'content': [
+                              {'type': 'text', 'text': prompt},
+                              {'type': 'image_url', 'image_url': {'url': image_url}}
+                          ]
+                      })
+                      model = 'meta-llama/llama-4-maverick-17b-128e-instruct'
+                  else:
+                      messages.append({
+                          'role': 'user',
+                          'content': prompt
+                      })
+                      model = 'llama-3.3-70b-versatile'
+
+                  response = requests.post(
+                      'https://api.groq.com/openai/v1/chat/completions',
+                      headers={
+                          'Authorization': f'Bearer {self.groq_api_key}',
+                          'Content-Type': 'application/json'
+                      },
+                      json={
+                          'messages': messages,
+                          'model': model,
+                          'temperature': 0.1,
+                          'max_tokens': 100
+                      }
+                  )
+                  
+                  if not response.ok:
+                      raise Exception(f'Groq API Error: {response.status_code}')
+                  
+                  data = response.json()
+                  return data['choices'][0]['message']['content'].strip()
+
+              def parse_issue_body(self, body: str) -> Dict[str, any]:
+                  """Parsea el cuerpo del issue para extraer título, descripción y fuentes."""
+                  sections = {
+                      'title': '',
+                      'description': '',
+                      'fuentes': []
+                  }
+
+                  # Extraer título
+                  title_match = re.search(r'### 📌 Título\s*\n\n(.*?)(?=\n### |$)', body, re.DOTALL)
+                  if title_match:
+                      sections['title'] = title_match.group(1).strip()
+
+                  # Extraer descripción
+                  desc_match = re.search(r'### 📝 Descripción\s*\r?\n+([\s\S]*?)(?=\n### |$)', body)
+                  if desc_match:
+                      sections['description'] = desc_match.group(1).strip()
+
+                  # Extraer fuentes
+                  fuentes_match = re.search(r'### 🔗 Fuentes\s*\n\n(.*?)(?=\n### |$)', body, re.DOTALL)
+                  if fuentes_match:
+                      fuentes_text = fuentes_match.group(1).strip()
+                      
+                      # Buscar todas las URLs
+                      url_regex = r'https?://[^\s<>"{}|\\^`\[\]]+'
+                      urls = re.findall(url_regex, fuentes_text)
+                      
+                      # Buscar URLs en líneas con guiones
+                      lines = fuentes_text.split('\n')
+                      line_urls = []
+                      for line in lines:
+                          line = line.strip()
+                          if line.startswith('-') or line.startswith('*'):
+                              url_match = re.search(url_regex, line)
+                              if url_match:
+                                  line_urls.append(url_match.group(0))
+                      
+                      # Combinar y eliminar duplicados
+                      all_urls = list(set(urls + line_urls))
+                      sections['fuentes'] = all_urls
+
+                  return sections
+
+              def extract_images(self, body: str) -> List[str]:
+                  """Extrae URLs de imágenes del cuerpo del issue."""
+                  images = []
+                  
+                  # Imágenes markdown: ![alt](url)
+                  markdown_matches = re.findall(r'!\[.*?\]\((https?://[^\)]+)\)', body)
+                  images.extend(markdown_matches)
+                  
+                  # Imágenes HTML: <img src="url">
+                  html_matches = re.findall(r'<img[^>]+src=["\'](https?://[^"\']+)["\'][^>]*>', body)
+                  images.extend(html_matches)
+                  
+                  # URLs de GitHub assets
+                  github_matches = re.findall(r'https://github\.com/user-attachments/assets/[a-f0-9\-]+', body)
+                  images.extend(github_matches)
+                  
+                  # Eliminar duplicados
+                  return list(set(images))
+
+\\]', '', title)
+                  # Truncar si es muy largo
+                  title = title.strip()[:100]
+                  return title
+
               def file_exists(self, filepath: Path) -> bool:
                   """Verifica si un archivo existe."""
                   return filepath.exists()
@@ -373,9 +582,33 @@ jobs:
                       print(f'Error cerrando issue: {response.status_code}')
 
               def run_git_command(self, command: str) -> None:
-                  """Ejecuta un comando git."""
-                  result = subprocess.run(command.split(), capture_output=True, text=True, cwd=os.environ['GITHUB_WORKSPACE'])
+                  """Ejecuta un comando git en el directorio del workspace."""
+                  # Asegurar que estamos en el directorio correcto
+                  workspace_dir = os.environ['GITHUB_WORKSPACE']
+                  
+                  # Para comandos con mensajes, usar shell=True para manejar comillas correctamente
+                  if 'commit -m' in command:
+                      result = subprocess.run(
+                          command, 
+                          capture_output=True, 
+                          text=True, 
+                          cwd=workspace_dir,
+                          shell=True
+                      )
+                  else:
+                      result = subprocess.run(
+                          command.split(), 
+                          capture_output=True, 
+                          text=True, 
+                          cwd=workspace_dir
+                      )
+                      
                   if result.returncode != 0:
+                      print(f"Error ejecutando: {command}")
+                      print(f"STDOUT: {result.stdout}")
+                      print(f"STDERR: {result.stderr}")
+                      print(f"Working directory: {workspace_dir}")
+                      print(f"Return code: {result.returncode}")
                       raise Exception(f'Git command failed: {result.stderr}')
 
               def process(self) -> None:
@@ -403,8 +636,11 @@ jobs:
                       # Validaciones básicas
                       final_title = sections['title'] or re.sub(r'^\[Info\]\s*', '', self.issue_title, flags=re.IGNORECASE).strip()
                       
-                      if not final_title or len(final_title) < 3:
-                          raise Exception('El título es muy corto o está vacío')
+                      # Limpiar título de HTML/markdown para uso seguro
+                      clean_title = self.clean_title_for_commit(final_title)
+                      
+                      if not clean_title or len(clean_title) < 3:
+                          raise Exception('El título es muy corto o está vacío después de limpieza')
 
                       if not sections['description'] or len(sections['description']) < 500:
                           raise Exception('La descripción debe tener al menos 500 caracteres')
@@ -415,9 +651,6 @@ jobs:
                       if len(images) == 0:
                           raise Exception('Debe incluir al menos una imagen')
 
-                      # Validar con IA
-                      self.validate_content(sections['description'], sections['fuentes'], images[0])
-
                       # Crear directorio objetivo
                       self.target_dir.mkdir(parents=True, exist_ok=True)
 
@@ -427,15 +660,18 @@ jobs:
                       file_info = self.find_available_filename(sanitized_title, self.issue_user)
                       final_filename = file_info['filename']
 
-                      # Descargar imagen
+                      # Descargar imagen UNA SOLA VEZ
                       print('📥 Descargando imagen...')
-                      self.download_image(images[0], final_filename)
+                      image_path, image_bytes = self.download_image_once(images[0], final_filename)
+
+                      # Validar con IA (usando los bytes ya descargados)
+                      self.validate_content(sections['description'], sections['fuentes'], images[0], image_bytes)
 
                       # Crear archivo markdown
                       print('📝 Creando archivo markdown...')
                       self.create_markdown_file(
                           final_filename,
-                          final_title,
+                          clean_title,  # Usar título limpio
                           sections['description'],
                           sections['fuentes'],
                           self.issue_user
@@ -447,11 +683,14 @@ jobs:
 
                       print('📤 Realizando commit...')
                       self.run_git_command('git add .')
-                      self.run_git_command(f'git commit -m "Nueva entrada: {final_title} (Issue #{self.issue_number})"')
+                      
+                      # Usar título limpio en el mensaje de commit
+                      commit_message = f'Nueva entrada: {clean_title} (Issue #{self.issue_number})'
+                      self.run_git_command(f'git commit -m "{commit_message}"')
                       self.run_git_command('git push')
 
                       # Mensaje de éxito
-                      success_message = f'Entrada creada exitosamente: **{final_title}**\n\n'
+                      success_message = f'Entrada creada exitosamente: **{clean_title}**\n\n'
                       success_message += f'📁 Archivo: `{final_filename}.md`\n'
                       success_message += f'👤 Usuario: {self.issue_user}\n'
                       success_message += f'📊 Fuentes encontradas: {len(sections["fuentes"])}\n'
